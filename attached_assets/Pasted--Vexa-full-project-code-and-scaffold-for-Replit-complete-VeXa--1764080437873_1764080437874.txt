@@ -1,0 +1,598 @@
+# Vexa full project code and scaffold for Replit (complete)
+
+هذا مشروع كامل مكمل لتشغيل VeXa أونلاين على Replit دون إعدادات خارجية. يتضمن:
+- واجهة أمامية Next.js بتصميم نيون + زجاجي.
+- واجهة كاملة: الرئيسية، تسجيل، إنشاء حساب، ملف شخصي، دردشة مجانية، مدفوعة، وإعدادات بسيطة.
+- خادم Express + Socket.IO.
+- قاعدة بيانات داخلية بالذاكرة (In-memory) لتسهيل التشغيل فورًا على Replit. يمكنك لاحقًا تبديلها إلى MongoDB Atlas بسهولة.
+- مخطط المشروع واضح ومكتمل.
+
+انسخ المحتوى بالكامل إلى مشروع جديد على Replit داخل مجلد واحد، ثم شغّل.
+
+---
+
+## Project structure
+
+```
+vexa/
+├── package.json
+├── next.config.js
+├── replit.nix
+├── server.js
+├── lib/
+│   ├── db.js
+│   └── ai.js
+├── pages/
+│   ├── _app.jsx
+│   ├── index.jsx
+│   ├── login.jsx
+│   ├── register.jsx
+│   ├── profile.jsx
+│   ├── chat.jsx
+│   └── settings.jsx
+├── components/
+│   ├── Navbar.jsx
+│   ├── MatchCard.jsx
+│   ├── ChatBox.jsx
+│   └── PaymentForm.jsx
+├── public/
+│   ├── favicon.ico
+│   └── manifest.json
+└── styles/
+    └── global.css
+```
+
+---
+
+## Root configuration
+
+### package.json
+```json
+{
+  "name": "vexa",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "axios": "1.7.2",
+    "cors": "2.8.5",
+    "express": "4.19.2",
+    "next": "14.2.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "socket.io": "4.7.5",
+    "socket.io-client": "4.7.5"
+  }
+}
+```
+
+### next.config.js
+```js
+const nextConfig = {
+  reactStrictMode: true
+};
+module.exports = nextConfig;
+```
+
+### replit.nix
+```nix
+{ pkgs }: {
+  deps = [
+    pkgs.nodejs_20
+    pkgs.python3
+  ];
+}
+```
+
+---
+
+## Backend server (Express + Socket.IO)
+
+### server.js
+```js
+const express = require('express');
+const next = require('next');
+const http = require('http');
+const cors = require('cors');
+const { Server } = require('socket.io');
+
+const dev = process.env.NODE_ENV !== 'production';
+const appNext = next({ dev });
+const handle = appNext.getRequestHandler();
+
+const { db } = require('./lib/db');
+const { aiRecommend } = require('./lib/ai');
+
+appNext.prepare().then(() => {
+  const app = express();
+  const server = http.createServer(app);
+  const io = new Server(server, { cors: { origin: '*' } });
+
+  // Middleware
+  app.use(cors({ origin: '*' }));
+  app.use(express.json());
+
+  // Health
+  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'VeXa' }));
+
+  // Auth
+  app.post('/api/auth/register', (req, res) => {
+    const { name, email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
+    const exists = db.users.find(u => u.email === email);
+    if (exists) return res.status(400).json({ error: 'Email already registered' });
+    const user = { id: `${Date.now()}`, name: name || 'User', email, password, interests: [], avatarUrl: '', createdAt: Date.now() };
+    db.users.push(user);
+    res.json({ message: 'Registered', userId: user.id });
+  });
+
+  app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body || {};
+    const user = db.users.find(u => u.email === email && u.password === password);
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    res.json({ message: 'Logged in', userId: user.id });
+  });
+
+  // Profile
+  app.get('/api/profile/me', (req, res) => {
+    const user = db.users[0] || null;
+    res.json(user || { message: 'No profile yet' });
+  });
+
+  app.put('/api/profile/me', (req, res) => {
+    const { email, updates } = req.body || {};
+    const idx = db.users.findIndex(u => u.email === email);
+    if (idx < 0) return res.status(404).json({ error: 'User not found' });
+    db.users[idx] = { ...db.users[idx], ...updates };
+    res.json(db.users[idx]);
+  });
+
+  // Matchmaking (AI stub)
+  app.get('/api/match/recommendations', (req, res) => {
+    const user = db.users[0] || { interests: ['Design', 'Tech'] };
+    const recs = aiRecommend(user);
+    res.json(recs);
+  });
+
+  // Chat history
+  app.get('/api/chat/history', (_req, res) => {
+    res.json(db.chats.slice(-20));
+  });
+
+  // Payment (stub)
+  app.post('/api/payment/checkout', (req, res) => {
+    const { amount } = req.body || {};
+    const payment = { id: `${Date.now()}`, amount: Number(amount || 5), status: 'initiated', at: Date.now() };
+    db.payments.push(payment);
+    res.json({ message: `Checkout initiated for $${payment.amount}` });
+  });
+
+  // Socket.IO
+  io.on('connection', (socket) => {
+    socket.on('message', (m) => {
+      const entry = { text: m.text, at: m.at || Date.now() };
+      db.chats.push(entry);
+      io.emit('message', entry);
+    });
+  });
+
+  // Next.js pages
+  app.all('*', (req, res) => handle(req, res));
+
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`VeXa running on http://localhost:${PORT}`);
+  });
+}).catch(err => {
+  console.error('Startup error:', err);
+});
+```
+
+---
+
+## In-memory data and AI stub
+
+### lib/db.js
+```js
+const db = {
+  users: [],
+  chats: [],
+  payments: []
+};
+module.exports = { db };
+```
+
+### lib/ai.js
+```js
+function aiRecommend(profile) {
+  const base = (profile && profile.interests) || ['Design', 'Tech'];
+  return [
+    { name: 'Ava', score: 0.86, interests: ['Design', 'Tech'] },
+    { name: 'Leo', score: 0.81, interests: ['Music', 'Travel'] },
+    { name: 'Maya', score: 0.79, interests: ['Art', 'Wellness'] }
+  ].sort((a, b) => b.score - a.score);
+}
+module.exports = { aiRecommend };
+```
+
+---
+
+## Frontend pages
+
+### pages/_app.jsx
+```jsx
+import '../styles/global.css';
+export default function App({ Component, pageProps }) {
+  return <Component {...pageProps} />;
+}
+```
+
+### pages/index.jsx
+```jsx
+import Navbar from "../components/Navbar";
+import MatchCard from "../components/MatchCard";
+import { useEffect, useState } from "react";
+import axios from "axios";
+
+export default function Home() {
+  const [recs, setRecs] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await axios.get("/api/match/recommendations");
+      setRecs(data);
+    })();
+  }, []);
+
+  return (
+    <main className="container">
+      <Navbar />
+      <section className="hero">
+        <h1>VeXa</h1>
+        <p>منصة دردشة وتعارف بالذكاء الاصطناعي</p>
+        <a className="btn" href="/register">ابدأ الآن</a>
+      </section>
+      <section className="grid">
+        {recs.map((p, i) => (
+          <MatchCard key={i} name={p.name} interests={p.interests} />
+        ))}
+      </section>
+    </main>
+  );
+}
+```
+
+### pages/login.jsx
+```jsx
+import { useState } from "react";
+import axios from "axios";
+
+export default function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post("/api/auth/login", { email, password });
+      alert(res.data.message || "تم تسجيل الدخول");
+      window.location.href = "/profile";
+    } catch (e) {
+      alert(e?.response?.data?.error || "خطأ في تسجيل الدخول");
+    }
+  };
+
+  return (
+    <main className="container">
+      <h2>تسجيل الدخول</h2>
+      <div className="card">
+        <form onSubmit={onSubmit}>
+          <input placeholder="البريد الإلكتروني" value={email} onChange={(e)=>setEmail(e.target.value)} />
+          <input placeholder="كلمة المرور" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} />
+          <button type="submit" className="btn">دخول</button>
+        </form>
+      </div>
+    </main>
+  );
+}
+```
+
+### pages/register.jsx
+```jsx
+import { useState } from "react";
+import axios from "axios";
+
+export default function Register() {
+  const [form, setForm] = useState({ name:"", email:"", password:"" });
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post("/api/auth/register", form);
+      alert(res.data.message || "تم إنشاء الحساب");
+      window.location.href = "/login";
+    } catch (e) {
+      alert(e?.response?.data?.error || "خطأ في إنشاء الحساب");
+    }
+  };
+
+  return (
+    <main className="container">
+      <h2>إنشاء حساب</h2>
+      <div className="card">
+        <form onSubmit={onSubmit}>
+          <input placeholder="الاسم" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} />
+          <input placeholder="البريد الإلكتروني" value={form.email} onChange={(e)=>setForm({...form,email:e.target.value})} />
+          <input placeholder="كلمة المرور" type="password" value={form.password} onChange={(e)=>setForm({...form,password:e.target.value})} />
+          <button type="submit" className="btn">تسجيل</button>
+        </form>
+      </div>
+    </main>
+  );
+}
+```
+
+### pages/profile.jsx
+```jsx
+import { useEffect, useState } from "react";
+import axios from "axios";
+
+export default function Profile() {
+  const [profile, setProfile] = useState(null);
+  const [updates, setUpdates] = useState({ name: "", interests: "" });
+
+  useEffect(() => {
+    (async () => {
+      const res = await axios.get("/api/profile/me");
+      setProfile(res.data);
+      setUpdates({ name: res.data?.name || "", interests: (res.data?.interests || []).join(", ") });
+    })();
+  }, []);
+
+  const save = async () => {
+    if (!profile?.email) return alert("لا يوجد مستخدم محمّل");
+    const interestsArr = updates.interests.split(",").map(s=>s.trim()).filter(Boolean);
+    const res = await axios.put("/api/profile/me", { email: profile.email, updates: { name: updates.name, interests: interestsArr } });
+    setProfile(res.data);
+    alert("تم حفظ الملف الشخصي");
+  };
+
+  return (
+    <main className="container">
+      <h2>ملفي الشخصي</h2>
+      <div className="card">
+        {profile ? (
+          <>
+            <p>البريد: {profile.email}</p>
+            <input placeholder="الاسم" value={updates.name} onChange={(e)=>setUpdates({...updates, name:e.target.value})} />
+            <input placeholder="الاهتمامات بالفواصل" value={updates.interests} onChange={(e)=>setUpdates({...updates, interests:e.target.value})} />
+            <button className="btn" onClick={save}>حفظ</button>
+          </>
+        ) : <p>تحميل...</p>}
+      </div>
+    </main>
+  );
+}
+```
+
+### pages/chat.jsx
+```jsx
+import ChatBox from "../components/ChatBox";
+import PaymentForm from "../components/PaymentForm";
+import Navbar from "../components/Navbar";
+
+export default function ChatPage() {
+  return (
+    <main className="container">
+      <Navbar />
+      <h2>الدردشة</h2>
+      <ChatBox />
+      <PaymentForm />
+    </main>
+  );
+}
+```
+
+### pages/settings.jsx
+```jsx
+import Navbar from "../components/Navbar";
+
+export default function Settings() {
+  return (
+    <main className="container">
+      <Navbar />
+      <h2>الإعدادات</h2>
+      <div className="card">
+        <p>اللغة: عربية / إنجليزية</p>
+        <p>الخصوصية: إخفاء الملف من البحث (قريبًا)</p>
+      </div>
+    </main>
+  );
+}
+```
+
+---
+
+## Components
+
+### components/Navbar.jsx
+```jsx
+import Link from "next/link";
+
+export default function Navbar() {
+  return (
+    <nav className="glass nav">
+      <Link href="/">الرئيسية</Link>
+      <Link href="/login">تسجيل الدخول</Link>
+      <Link href="/register">إنشاء حساب</Link>
+      <Link href="/profile">ملفي الشخصي</Link>
+      <Link href="/chat">الدردشة</Link>
+      <Link href="/settings">الإعدادات</Link>
+    </nav>
+  );
+}
+```
+
+### components/MatchCard.jsx
+```jsx
+export default function MatchCard({ name, interests = [] }) {
+  return (
+    <div className="glass card">
+      <h3>{name}</h3>
+      <p>اهتمامات: {interests.join(", ")}</p>
+      <button className="btn">تواصل</button>
+    </div>
+  );
+}
+```
+
+### components/ChatBox.jsx
+```jsx
+import { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+
+export default function ChatBox() {
+  const [socket, setSocket] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    const s = io(); // same origin
+    setSocket(s);
+    s.on("message", (m) => setMessages((prev)=>[...prev, m]));
+    return ()=>s.disconnect();
+  }, []);
+
+  const send = () => {
+    if (!text.trim()) return;
+    socket.emit("message", { text, at: Date.now() });
+    setText("");
+  };
+
+  return (
+    <div className="card">
+      <h3>دردشة مجانية</h3>
+      <div className="chat">
+        {messages.map((m,i)=><div key={i} className="bubble">{m.text}</div>)}
+      </div>
+      <div className="row">
+        <input value={text} onChange={(e)=>setText(e.target.value)} placeholder="اكتب..." />
+        <button className="btn" onClick={send}>إرسال</button>
+      </div>
+    </div>
+  );
+}
+```
+
+### components/PaymentForm.jsx
+```jsx
+import { useState } from "react";
+import axios from "axios";
+
+export default function PaymentForm() {
+  const [amount, setAmount] = useState(5);
+
+  const pay = async () => {
+    const res = await axios.post("/api/payment/checkout", { amount });
+    alert(res.data.message || "تم الدفع");
+  };
+
+  return (
+    <div className="card">
+      <h3>دردشة مدفوعة</h3>
+      <input type="number" value={amount} onChange={(e)=>setAmount(Number(e.target.value))} />
+      <button className="btn" onClick={pay}>ادفع</button>
+    </div>
+  );
+}
+```
+
+---
+
+## Public and styles
+
+### public/manifest.json
+```json
+{
+  "name": "VeXa",
+  "short_name": "VeXa",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f1a",
+  "theme_color": "#00e0ff",
+  "icons": []
+}
+```
+
+### styles/global.css
+```css
+:root {
+  --bg: #0b0f1a;
+  --glass: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.18);
+  --accent: #00e0ff;
+  --text: #e6f7ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: radial-gradient(1000px 600px at 10% 10%, #112, var(--bg));
+  color: var(--text);
+  font-family: "Tajawal", system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+.container { max-width: 960px; margin: 0 auto; padding: 24px; }
+.hero h1 { font-size: 3rem; text-shadow: 0 0 18px var(--accent); }
+.nav { display: flex; gap: 16px; padding: 12px; margin-bottom: 20px; }
+.glass {
+  backdrop-filter: blur(16px) saturate(140%);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 224, 255, 0.15);
+}
+.card { padding: 16px; margin: 16px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.chat { min-height: 140px; display: flex; flex-direction: column; gap: 8px; }
+.bubble { background: rgba(0,224,255,0.08); border: 1px solid var(--border); padding: 8px 12px; border-radius: 12px; }
+input, .btn {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: rgba(255,255,255,0.06); color: var(--text);
+}
+.btn { cursor: pointer; }
+.row { display: flex; gap: 8px; }
+```
+
+---
+
+## مخطط المشروع المبسط
+
+- واجهة: Next.js صفحات رئيسية، تسجيل، إنشاء حساب، ملف شخصي، دردشة، إعدادات؛ تصميم زجاجي ونيون، عناصر قابلة لإعادة الاستخدام.
+- خادم: Express يقدّم REST APIs للمصادقة، الملف الشخصي، الدردشة، المدفوعات؛ وSocket.IO للرسائل الفورية.
+- بيانات: تخزين بالذاكرة أثناء التطوير؛ يمكن الاستبدال لاحقًا بـ MongoDB Atlas عبر طبقة db.
+- ذكاء: توصيات مطابقة بسيطة عبر aiRecommend، جاهزة للاستبدال بتكامل API لاحقًا.
+- تشغيل: أمر واحد dev يشغّل Next + خادم Socket.IO على نفس المنفذ.
+
+---
+
+## طريقة التشغيل على Replit
+
+- أنشئ مشروع جديد → Import أو انسخ الملفات أعلاه داخل المشروع.
+- شغّل:
+  ```
+  npm install
+  npm run dev
+  ```
+- افتح رابط المعاينة. ستجد:
+  - الصفحة الرئيسية مع توصيات مطابقة.
+  - إنشاء حساب وتسجيل الدخول (تجريبي).
+  - ملف شخصي قابل للتعديل.
+  - دردشة فورية عبر Socket.IO.
+  - زر دفع تجريبي (رسالة فقط).
+
+---
+
+هل تريدني أضيف خيار تبديل سريع لقاعدة البيانات إلى MongoDB لاحقًا عبر ملف واحد db-mongo.js ومفتاح بيئة MONGO_URI؟
