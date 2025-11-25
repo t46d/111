@@ -54,7 +54,6 @@ export default function Settings() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ar">العربية</SelectItem>
-                    <SelectItem value="en">English</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
