@@ -3,9 +3,8 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/useAuth";
 import Home from "@/pages/Home";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
 import Profile from "@/pages/Profile";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
@@ -13,16 +12,29 @@ import UserDetail from "@/pages/UserDetail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center">Loading...</div>;
+  }
+
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      <Route path="/profile" component={Profile} />
-      <Route path="/chat" component={Chat} />
-      <Route path="/settings" component={Settings} />
-      <Route path="/user" component={UserDetail} />
-      <Route component={NotFound} />
+      {isAuthenticated ? (
+        <>
+          <Route path="/" component={Home} />
+          <Route path="/profile" component={Profile} />
+          <Route path="/chat" component={Chat} />
+          <Route path="/settings" component={Settings} />
+          <Route path="/user" component={UserDetail} />
+          <Route component={NotFound} />
+        </>
+      ) : (
+        <>
+          <Route path="/" component={Home} />
+          <Route component={NotFound} />
+        </>
+      )}
     </Switch>
   );
 }

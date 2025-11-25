@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { storage } from "./storage";
-import { insertUserSchema, insertPaymentSchema } from "@shared/schema";
+import { insertPaymentSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
+import { isAuthenticated } from "./replitAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -16,49 +17,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, service: 'VeXa' });
   });
 
-  // Auth endpoints
-  app.post('/api/auth/register', async (req, res) => {
+  // Auth endpoints for Replit Auth
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const result = insertUserSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ error: fromZodError(result.error).message });
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
       }
-
-      const existingUser = await storage.getUserByEmail(result.data.email);
-      if (existingUser) {
-        return res.status(400).json({ error: 'Email already registered' });
-      }
-
-      const user = await storage.createUser(result.data);
-      res.json({ message: 'Registered successfully', userId: user.id, user });
-    } catch (error) {
-      res.status(500).json({ error: 'Registration failed' });
-    }
-  });
-
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password } = req.body;
       
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Email and password required' });
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
       }
-
-      const user = await storage.getUserByEmail(email);
-      if (!user || user.password !== password) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-
-      res.json({ message: 'Logged in successfully', userId: user.id, user });
+      
+      res.json(user);
     } catch (error) {
-      res.status(500).json({ error: 'Login failed' });
+      console.error('Error fetching user:', error);
+      res.status(500).json({ message: 'Failed to fetch user' });
     }
   });
 
   // Profile endpoints
-  app.get('/api/profile/me', async (req, res) => {
+  app.get('/api/profile/me', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = req.user?.claims?.sub;
       
       if (!userId) {
         return res.status(401).json({ error: 'Authentication required' });
@@ -75,9 +57,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/profile/me', async (req, res) => {
+  app.put('/api/profile/me', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = req.user?.claims?.sub;
       const { updates } = req.body;
       
       if (!userId) {
@@ -164,9 +146,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment endpoint
-  app.post('/api/payment/checkout', async (req, res) => {
+  app.post('/api/payment/checkout', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = req.user?.claims?.sub;
       const { amount } = req.body;
       
       if (!userId) {
@@ -199,9 +181,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Review endpoints
-  app.post('/api/reviews', async (req, res) => {
+  app.post('/api/reviews', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = req.user?.claims?.sub;
       const { toUserId, rating, comment } = req.body;
       
       if (!userId) {
@@ -240,7 +222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analytics endpoints
   app.post('/api/analytics/track', async (req, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req.user as any)?.claims?.sub;
       const { eventType, eventData } = req.body;
       
       if (!eventType) {
@@ -259,9 +241,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/analytics/events', async (req, res) => {
+  app.get('/api/analytics/events', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.headers['x-user-id'] as string;
+      const userId = req.user?.claims?.sub;
       const { eventType, limit } = req.query;
       
       if (!userId) {
