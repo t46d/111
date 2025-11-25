@@ -36,6 +36,23 @@ export const payments = pgTable("payments", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+export const reviews = pgTable("reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromUserId: varchar("from_user_id").notNull().references(() => users.id),
+  toUserId: varchar("to_user_id").notNull().references(() => users.id),
+  rating: integer("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const analytics = pgTable("analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  eventType: text("event_type").notNull(),
+  eventData: text("event_data"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   avatarUrl: true,
@@ -58,11 +75,31 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({
   createdAt: true,
 });
 
+export const insertReviewSchema = createInsertSchema(reviews).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  rating: z.number().min(1).max(5),
+  comment: z.string().optional(),
+});
+
+export const insertAnalyticsSchema = createInsertSchema(analytics).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  eventType: z.string(),
+  eventData: z.string().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Match = typeof matches.$inferSelect;
 export type Chat = typeof chats.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
+export type Review = typeof reviews.$inferSelect;
+export type Analytics = typeof analytics.$inferSelect;
 export type InsertMatch = z.infer<typeof insertMatchSchema>;
 export type InsertChat = z.infer<typeof insertChatSchema>;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type InsertReview = z.infer<typeof insertReviewSchema>;
+export type InsertAnalytics = z.infer<typeof insertAnalyticsSchema>;

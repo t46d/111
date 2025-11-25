@@ -1,10 +1,16 @@
+import { useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import ChatBox from "@/components/ChatBox";
 import PaymentForm from "@/components/PaymentForm";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
 
 export default function Chat() {
+  useEffect(() => {
+    trackEvent(ANALYTICS_EVENTS.START_CHAT);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

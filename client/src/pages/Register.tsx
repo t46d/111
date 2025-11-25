@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { User, Mail, Lock } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
+import { saveUser } from "@/lib/auth";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -23,11 +25,12 @@ export default function Register() {
       const res = await apiRequest('POST', '/api/auth/register', data);
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       toast({
         title: "تم إنشاء الحساب",
         description: "يمكنك الآن تسجيل الدخول",
       });
+      trackEvent(ANALYTICS_EVENTS.USER_SIGNUP, { name: formData.name, email: formData.email });
       setLocation("/login");
     },
     onError: (error: any) => {

@@ -5,10 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Sparkles, Users, MessageCircle, Zap } from "lucide-react";
 import { Link } from "wouter";
 
+import { useEffect } from 'react';
+import { trackEvent, ANALYTICS_EVENTS } from '@/lib/analytics';
+
 export default function Home() {
   const { data: recommendations = [], isLoading } = useQuery<any[]>({
     queryKey: ['/api/match/recommendations'],
   });
+
+  useEffect(() => {
+    trackEvent(ANALYTICS_EVENTS.VIEW_MATCH);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -94,9 +101,11 @@ export default function Home() {
               {recommendations.map((rec: any, idx: number) => (
                 <MatchCard
                   key={idx}
+                  id={rec.id}
                   name={rec.name}
                   score={rec.score}
                   interests={rec.interests}
+                  avatarUrl={rec.avatarUrl}
                 />
               ))}
             </div>

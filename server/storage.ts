@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Match, type InsertMatch, type Chat, type InsertChat, type Payment, type InsertPayment } from "@shared/schema";
+import { type User, type InsertUser, type Match, type InsertMatch, type Chat, type InsertChat, type Payment, type InsertPayment, type Review, type InsertReview, type Analytics, type InsertAnalytics } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -21,6 +21,15 @@ export interface IStorage {
   // Payment operations
   createPayment(payment: InsertPayment): Promise<Payment>;
   getPaymentsForUser(userId: string): Promise<Payment[]>;
+  
+  // Review operations
+  createReview(review: InsertReview): Promise<Review>;
+  getReviewsForUser(userId: string): Promise<Review[]>;
+  getAverageRating(userId: string): Promise<number>;
+  
+  // Analytics operations
+  trackEvent(analytics: InsertAnalytics): Promise<Analytics>;
+  getAnalyticsEvents(eventType?: string, limit?: number): Promise<Analytics[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -28,12 +37,16 @@ export class MemStorage implements IStorage {
   private matches: Map<string, Match>;
   private chats: Map<string, Chat>;
   private payments: Map<string, Payment>;
+  private reviews: Map<string, Review>;
+  private analytics: Map<string, Analytics>;
 
   constructor() {
     this.users = new Map();
     this.matches = new Map();
     this.chats = new Map();
     this.payments = new Map();
+    this.reviews = new Map();
+    this.analytics = new Map();
     
     // Seed some demo users for matchmaking
     this.seedDemoData();
@@ -137,6 +150,56 @@ export class MemStorage implements IStorage {
     return Array.from(this.payments.values()).filter(
       payment => payment.userId === userId
     );
+  }
+
+  // Review operations
+  async createReview(insertReview: InsertReview): Promise<Review> {
+    const id = randomUUID();
+    const review: Review = {
+      ...insertReview,
+      id,
+      createdAt: new Date(),
+      comment: insertReview.comment || null,
+    };
+    this.reviews.set(id, review);
+    return review;
+  }
+
+  async getReviewsForUser(userId: string): Promise<Review[]> {
+    return Array.from(this.reviews.values()).filter(
+      review => review.toUserId === userId
+    );
+  }
+
+  async getAverageRating(userId: string): Promise<number> {
+    const reviews = await this.getReviewsForUser(userId);
+    if (reviews.length === 0) return 0;
+    const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
+    return sum / reviews.length;
+  }
+
+  // Analytics operations
+  async trackEvent(insertAnalytics: InsertAnalytics): Promise<Analytics> {
+    const id = randomUUID();
+    const analytic: Analytics = {
+      ...insertAnalytics,
+      id,
+      createdAt: new Date(),
+      userId: insertAnalytics.userId || null,
+      eventData: insertAnalytics.eventData || null,
+    };
+    this.analytics.set(id, analytic);
+    return analytic;
+  }
+
+  async getAnalyticsEvents(eventType?: string, limit: number = 100): Promise<Analytics[]> {
+    let events = Array.from(this.analytics.values());
+    if (eventType) {
+      events = events.filter(e => e.eventType === eventType);
+    }
+    return events
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
   }
 }
 

@@ -198,6 +198,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Review endpoints
+  app.post('/api/reviews', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const { toUserId, rating, comment } = req.body;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!toUserId || !rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: 'Invalid review data' });
+      }
+
+      const review = await storage.createReview({
+        fromUserId: userId,
+        toUserId,
+        rating,
+        comment: comment || '',
+      });
+
+      res.json(review);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create review' });
+    }
+  });
+
+  app.get('/api/reviews/:userId', async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const reviews = await storage.getReviewsForUser(userId);
+      const averageRating = await storage.getAverageRating(userId);
+      
+      res.json({ reviews, averageRating });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch reviews' });
+    }
+  });
+
+  // Analytics endpoints
+  app.post('/api/analytics/track', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const { eventType, eventData } = req.body;
+      
+      if (!eventType) {
+        return res.status(400).json({ error: 'Event type required' });
+      }
+
+      const event = await storage.trackEvent({
+        userId,
+        eventType,
+        eventData: eventData ? JSON.stringify(eventData) : undefined,
+      });
+
+      res.json(event);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to track event' });
+    }
+  });
+
+  app.get('/api/analytics/events', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const { eventType, limit } = req.query;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const events = await storage.getAnalyticsEvents(
+        eventType as string | undefined,
+        limit ? parseInt(limit as string) : 100
+      );
+
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
   // Socket.IO for real-time chat
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);

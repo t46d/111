@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { User, Mail, Heart, X } from "lucide-react";
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
 
 export default function Profile() {
   const { toast } = useToast();
@@ -31,6 +32,7 @@ export default function Profile() {
         name: profile.name || '',
         interests: profile.interests?.join(', ') || '',
       });
+      trackEvent(ANALYTICS_EVENTS.VIEW_PROFILE, { userId: profile.id });
     }
   }, [profile]);
 
@@ -57,6 +59,7 @@ export default function Profile() {
 
   const handleSave = () => {
     const interests = formData.interests.split(',').map((s: string) => s.trim()).filter(Boolean);
+    trackEvent(ANALYTICS_EVENTS.EDIT_PROFILE, { interests: interests.length });
     updateMutation.mutate({ name: formData.name, interests });
   };
 

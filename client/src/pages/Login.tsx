@@ -9,6 +9,7 @@ import { Mail, Lock } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { saveUser } from "@/lib/auth";
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -27,6 +28,7 @@ export default function Login() {
         title: "تم تسجيل الدخول",
         description: "مرحباً بك في VeXa",
       });
+      trackEvent(ANALYTICS_EVENTS.USER_LOGIN, { email: email });
       setLocation("/profile");
     },
     onError: (error: any) => {

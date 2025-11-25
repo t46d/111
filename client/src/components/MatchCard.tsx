@@ -1,17 +1,32 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart } from "lucide-react";
+import { Heart, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation } from "wouter";
+import { trackEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
 
 interface MatchCardProps {
+  id: string;
   name: string;
   score: number;
   interests: string[];
   avatarUrl?: string;
 }
 
-export default function MatchCard({ name, score, interests, avatarUrl }: MatchCardProps) {
+export default function MatchCard({ id, name, score, interests, avatarUrl }: MatchCardProps) {
+  const [, setLocation] = useLocation();
+
+  const handleViewProfile = () => {
+    trackEvent(ANALYTICS_EVENTS.VIEW_MATCH, { matchId: id, matchName: name });
+    setLocation(`/user?id=${id}`);
+  };
+
+  const handleChat = () => {
+    trackEvent(ANALYTICS_EVENTS.START_CHAT, { matchId: id, matchName: name });
+    setLocation('/chat');
+  };
+
   return (
     <Card className="glass border-white/10 overflow-hidden hover-elevate transition-all duration-300 group" data-testid={`card-match-${name}`}>
       <div className="p-6 space-y-4">
@@ -52,14 +67,25 @@ export default function MatchCard({ name, score, interests, avatarUrl }: MatchCa
           ))}
         </div>
 
-        <Button
-          className="w-full bg-gradient-to-r from-primary to-accent text-white"
-          data-testid={`button-connect-${name}`}
-          onClick={() => console.log(`Connect with ${name}`)}
-        >
-          <Heart className="w-4 h-4 mr-2" />
-          التواصل
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={handleViewProfile}
+            data-testid={`button-view-profile-${name}`}
+          >
+            <User className="w-4 h-4" />
+          </Button>
+          <Button
+            className="flex-1 bg-gradient-to-r from-primary to-accent text-white"
+            data-testid={`button-connect-${name}`}
+            onClick={handleChat}
+          >
+            <Heart className="w-4 h-4 mr-2" />
+            التواصل
+          </Button>
+        </div>
       </div>
     </Card>
   );
