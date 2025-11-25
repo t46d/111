@@ -3,8 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Lock, Zap, Crown } from "lucide-react";
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { getUser } from "@/lib/auth";
 
 export default function PaymentForm() {
+  const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState<string>('premium');
 
   const plans = [
@@ -12,9 +17,49 @@ export default function PaymentForm() {
     { id: 'premium', name: 'مميز', price: 10, icon: Crown, features: ['كل مميزات الأساسي', 'أولوية في التطابق', 'رسائل متقدمة'] },
   ];
 
+  const paymentMutation = useMutation({
+    mutationFn: async (data: { amount: number }) => {
+      const res = await apiRequest('POST', '/api/payment/checkout', data);
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "تم بدء عملية الدفع",
+        description: data.message,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "خطأ في الدفع",
+        description: "حدث خطأ، يرجى المحاولة مرة أخرى",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCheckout = () => {
     const plan = plans.find(p => p.id === selectedPlan);
-    console.log(`Checkout initiated for ${plan?.name} - $${plan?.price}`);
+    const user = getUser();
+    
+    if (!plan) {
+      toast({
+        title: "خطأ",
+        description: "يرجى اختيار خطة اشتراك",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: "يرجى تسجيل الدخول",
+        description: "يجب تسجيل الدخول لإتمام عملية الدفع",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    paymentMutation.mutate({ amount: plan.price });
   };
 
   return (
@@ -67,10 +112,11 @@ export default function PaymentForm() {
       <Button
         className="w-full bg-gradient-to-r from-primary to-accent text-white h-12 text-base"
         onClick={handleCheckout}
+        disabled={paymentMutation.isPending}
         data-testid="button-checkout"
       >
         <Lock className="w-4 h-4 mr-2" />
-        اشترك الآن
+        {paymentMutation.isPending ? 'جاري المعالجة...' : 'اشترك الآن'}
       </Button>
 
       <div className="flex items-center justify-center gap-2 mt-4">

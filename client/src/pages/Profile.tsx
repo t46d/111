@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import Navbar from "@/components/Navbar";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,33 +14,54 @@ import { User, Mail, Heart, X } from "lucide-react";
 export default function Profile() {
   const { toast } = useToast();
   
-  // todo: remove mock functionality
-  const { data: profile } = useQuery({
+  const { data: profile } = useQuery<any>({
     queryKey: ['/api/profile/me'],
-    queryFn: async () => ({
-      email: 'user@example.com',
-      name: 'محمد أحمد',
-      interests: ['Design', 'Tech', 'Music'],
-    }),
   });
 
   const [formData, setFormData] = useState({
-    name: profile?.name || '',
-    interests: profile?.interests?.join(', ') || '',
+    name: '',
+    interests: '',
   });
 
   const [newInterest, setNewInterest] = useState('');
 
+  useEffect(() => {
+    if (profile) {
+      setFormData({
+        name: profile.name || '',
+        interests: profile.interests?.join(', ') || '',
+      });
+    }
+  }, [profile]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (updates: { name: string; interests: string[] }) => {
+      const res = await apiRequest('PUT', '/api/profile/me', { updates });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/profile/me'] });
+      toast({
+        title: "تم حفظ الملف الشخصي",
+        description: "تم تحديث معلوماتك بنجاح",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "خطأ في الحفظ",
+        description: "حدث خطأ أثناء حفظ التغييرات",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSave = () => {
-    console.log('Profile updated:', formData);
-    toast({
-      title: "تم حفظ الملف الشخصي",
-      description: "تم تحديث معلوماتك بنجاح",
-    });
+    const interests = formData.interests.split(',').map((s: string) => s.trim()).filter(Boolean);
+    updateMutation.mutate({ name: formData.name, interests });
   };
 
   const removeInterest = (interest: string) => {
-    const interests = formData.interests.split(',').map(s => s.trim()).filter(s => s !== interest);
+    const interests = formData.interests.split(',').map((s: string) => s.trim()).filter((s: string) => s !== interest);
     setFormData({ ...formData, interests: interests.join(', ') });
   };
 
@@ -126,7 +148,7 @@ export default function Profile() {
               
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  {formData.interests.split(',').map(interest => interest.trim()).filter(Boolean).map((interest, idx) => (
+                  {formData.interests.split(',').map((interest: string) => interest.trim()).filter(Boolean).map((interest: string, idx: number) => (
                     <Badge
                       key={idx}
                       className="bg-primary/20 text-primary border-primary/30 pr-2"

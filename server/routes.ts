@@ -1,15 +1,272 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { Server as SocketIOServer } from "socket.io";
 import { storage } from "./storage";
+import { insertUserSchema, insertPaymentSchema } from "@shared/schema";
+import { fromZodError } from "zod-validation-error";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
-
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
-
   const httpServer = createServer(app);
+  const io = new SocketIOServer(httpServer, {
+    cors: { origin: "*" }
+  });
+
+  // Health check
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, service: 'VeXa' });
+  });
+
+  // Auth endpoints
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const result = insertUserSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: fromZodError(result.error).message });
+      }
+
+      const existingUser = await storage.getUserByEmail(result.data.email);
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+
+      const user = await storage.createUser(result.data);
+      res.json({ message: 'Registered successfully', userId: user.id, user });
+    } catch (error) {
+      res.status(500).json({ error: 'Registration failed' });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password required' });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user || user.password !== password) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+
+      res.json({ message: 'Logged in successfully', userId: user.id, user });
+    } catch (error) {
+      res.status(500).json({ error: 'Login failed' });
+    }
+  });
+
+  // Profile endpoints
+  app.get('/api/profile/me', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+  });
+
+  app.put('/api/profile/me', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const { updates } = req.body;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!updates) {
+        return res.status(400).json({ error: 'Updates required' });
+      }
+
+      // Validate interests format
+      if (updates.interests !== undefined && !Array.isArray(updates.interests)) {
+        return res.status(400).json({ error: 'Interests must be an array' });
+      }
+
+      // Validate name if provided
+      if (updates.name !== undefined && typeof updates.name !== 'string') {
+        return res.status(400).json({ error: 'Name must be a string' });
+      }
+
+      const updatedUser = await storage.updateUser(userId, {
+        name: updates.name,
+        interests: updates.interests,
+      });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.json(updatedUser);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to update profile' });
+    }
+  });
+
+  // Matchmaking endpoints
+  app.get('/api/match/recommendations', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      
+      // Allow unauthenticated users to see demo recommendations
+      const allUsers = await storage.getAllUsers();
+      let currentUserInterests = ['Design', 'Tech'];
+      let currentUserId = '';
+      
+      if (userId) {
+        const currentUser = await storage.getUser(userId);
+        if (currentUser) {
+          currentUserInterests = currentUser.interests;
+          currentUserId = currentUser.id;
+        }
+      }
+      
+      // Calculate match scores for other users
+      const recommendations = allUsers
+        .filter(u => u.id !== currentUserId)
+        .map(user => {
+          const score = calculateMatchScore(currentUserInterests, user.interests);
+          return {
+            id: user.id,
+            name: user.name,
+            score,
+            interests: user.interests,
+            avatarUrl: user.avatarUrl,
+          };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6);
+
+      res.json(recommendations);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to get recommendations' });
+    }
+  });
+
+  // Chat history endpoint
+  app.get('/api/chat/history', async (req, res) => {
+    try {
+      const chats = await storage.getRecentChats(20);
+      res.json(chats);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to get chat history' });
+    }
+  });
+
+  // Payment endpoint
+  app.post('/api/payment/checkout', async (req, res) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      const { amount } = req.body;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      if (!amount || typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({ error: 'Valid amount required' });
+      }
+
+      // Verify user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const payment = await storage.createPayment({
+        userId,
+        amount,
+        status: 'pending',
+      });
+
+      res.json({ 
+        message: `Checkout initiated for $${payment.amount}`, 
+        paymentId: payment.id 
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Checkout failed' });
+    }
+  });
+
+  // Socket.IO for real-time chat
+  io.on('connection', (socket) => {
+    console.log('User connected:', socket.id);
+
+    socket.on('join', (userId: string) => {
+      socket.join(`user-${userId}`);
+      console.log(`User ${userId} joined their room`);
+    });
+
+    socket.on('message', async (msg) => {
+      try {
+        const fromUserId = msg.fromUserId;
+        const toUserId = msg.toUserId;
+        const text = msg.text;
+
+        if (!fromUserId || !toUserId || !text) {
+          console.error('Invalid message format:', msg);
+          return;
+        }
+
+        // Persist message
+        const chat = await storage.createChat({
+          fromUserId,
+          toUserId,
+          text,
+        });
+
+        // Broadcast to sender and recipient
+        const messageData = {
+          id: chat.id,
+          text: chat.text,
+          timestamp: chat.createdAt.toISOString(),
+          fromUserId: chat.fromUserId,
+          toUserId: chat.toUserId,
+        };
+
+        io.to(`user-${fromUserId}`).emit('message', messageData);
+        io.to(`user-${toUserId}`).emit('message', messageData);
+      } catch (error) {
+        console.error('Error saving message:', error);
+        socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('User disconnected:', socket.id);
+    });
+  });
 
   return httpServer;
+}
+
+// AI matchmaking algorithm
+function calculateMatchScore(interests1: string[], interests2: string[]): number {
+  if (!interests1.length || !interests2.length) return 0.5;
+  
+  const set1 = new Set(interests1.map(i => i.toLowerCase()));
+  const set2 = new Set(interests2.map(i => i.toLowerCase()));
+  
+  let commonInterests = 0;
+  set1.forEach(interest => {
+    if (set2.has(interest)) commonInterests++;
+  });
+  
+  const totalUnique = new Set(Array.from(set1).concat(Array.from(set2))).size;
+  const jaccardIndex = commonInterests / totalUnique;
+  
+  // Add some randomness for variety
+  const randomFactor = 0.7 + Math.random() * 0.3;
+  
+  return Math.min(0.99, jaccardIndex * randomFactor);
 }

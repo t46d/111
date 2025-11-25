@@ -6,17 +6,8 @@ import { Sparkles, Users, MessageCircle, Zap } from "lucide-react";
 import { Link } from "wouter";
 
 export default function Home() {
-  // todo: remove mock functionality
-  const { data: recommendations = [], isLoading } = useQuery({
+  const { data: recommendations = [], isLoading } = useQuery<any[]>({
     queryKey: ['/api/match/recommendations'],
-    queryFn: async () => {
-      // Mock data for prototype
-      return [
-        { name: 'Ava', score: 0.86, interests: ['Design', 'Tech', 'Music'] },
-        { name: 'Leo', score: 0.81, interests: ['Music', 'Travel', 'Art'] },
-        { name: 'Maya', score: 0.79, interests: ['Art', 'Wellness', 'Books'] },
-      ];
-    },
   });
 
   return (

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { User, Mail, Lock } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -16,18 +18,30 @@ export default function Register() {
     password: "",
   });
 
+  const registerMutation = useMutation({
+    mutationFn: async (data: { name: string; email: string; password: string }) => {
+      const res = await apiRequest('POST', '/api/auth/register', data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "تم إنشاء الحساب",
+        description: "يمكنك الآن تسجيل الدخول",
+      });
+      setLocation("/login");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "خطأ في إنشاء الحساب",
+        description: error.message || "حدث خطأ، يرجى المحاولة مرة أخرى",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // todo: remove mock functionality
-    console.log('Register attempt:', formData);
-    
-    toast({
-      title: "تم إنشاء الحساب",
-      description: "مرحباً بك في VeXa",
-    });
-    
-    setLocation("/login");
+    registerMutation.mutate(formData);
   };
 
   return (
@@ -95,9 +109,10 @@ export default function Register() {
           <Button
             type="submit"
             className="w-full bg-gradient-to-r from-primary to-accent text-white h-12"
+            disabled={registerMutation.isPending}
             data-testid="button-submit"
           >
-            تسجيل
+            {registerMutation.isPending ? 'جاري التسجيل...' : 'تسجيل'}
           </Button>
         </form>
 

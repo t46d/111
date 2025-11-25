@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { saveUser } from "@/lib/auth";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -13,18 +16,31 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const loginMutation = useMutation({
+    mutationFn: async (data: { email: string; password: string }) => {
+      const res = await apiRequest('POST', '/api/auth/login', data);
+      return await res.json();
+    },
+    onSuccess: (data: any) => {
+      saveUser(data.user);
+      toast({
+        title: "تم تسجيل الدخول",
+        description: "مرحباً بك في VeXa",
+      });
+      setLocation("/profile");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "خطأ في تسجيل الدخول",
+        description: error.message || "تحقق من البريد الإلكتروني وكلمة المرور",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // todo: remove mock functionality
-    console.log('Login attempt:', { email, password });
-    
-    toast({
-      title: "تم تسجيل الدخول",
-      description: "مرحباً بك في VeXa",
-    });
-    
-    setLocation("/profile");
+    loginMutation.mutate({ email, password });
   };
 
   return (
@@ -75,9 +91,10 @@ export default function Login() {
           <Button
             type="submit"
             className="w-full bg-gradient-to-r from-primary to-accent text-white h-12"
+            disabled={loginMutation.isPending}
             data-testid="button-submit"
           >
-            دخول
+            {loginMutation.isPending ? 'جاري تسجيل الدخول...' : 'دخول'}
           </Button>
         </form>
 
