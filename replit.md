@@ -84,13 +84,20 @@ Preferred communication style: Simple, everyday language.
 - Registration with name, email, password, and interests
 - Login authentication
 - Profile editing (name and interests)
-- Avatar support (placeholder ready)
+- Profile picture upload with image preview
+- Location data (region, latitude, longitude)
 
 **Matching System**
 - AI-driven match scoring based on shared interests
 - Match recommendations endpoint
 - Match history tracking
 - Score calculation algorithm (simple overlap for now)
+
+**Search & Discovery**
+- Friend search by name and interests
+- Nearby users discovery based on geographic location
+- Distance calculation using Haversine formula
+- Configurable search radius (1-500 km)
 
 **Chat System**
 - Real-time messaging via WebSocket

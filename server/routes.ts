@@ -83,6 +83,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedUser = await storage.updateUser(userId, {
         name: updates.name,
         interests: updates.interests,
+        avatarUrl: updates.avatarUrl,
+        region: updates.region,
+        latitude: updates.latitude,
+        longitude: updates.longitude,
       });
       
       if (!updatedUser) {
@@ -92,6 +96,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedUser);
     } catch (error) {
       res.status(500).json({ error: 'Failed to update profile' });
+    }
+  });
+
+  // Search endpoints
+  app.get('/api/search', async (req, res) => {
+    try {
+      const { q } = req.query;
+      
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ error: 'Search query required' });
+      }
+
+      const results = await storage.searchUsers(q);
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ error: 'Search failed' });
+    }
+  });
+
+  app.get('/api/nearby', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const { distance } = req.query;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.latitude || !user.longitude) {
+        return res.status(400).json({ error: 'User location not configured' });
+      }
+
+      const maxDistance = parseInt(distance as string) || 50;
+      const nearbyUsers = await storage.getNearbyUsers(user.latitude, user.longitude, maxDistance);
+      
+      res.json(nearbyUsers.filter(u => u.id !== userId));
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch nearby users' });
     }
   });
 

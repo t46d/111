@@ -22,22 +22,34 @@ export default function Profile() {
   const [formData, setFormData] = useState({
     name: '',
     interests: '',
+    avatarUrl: '',
+    region: '',
+    latitude: '',
+    longitude: '',
   });
 
   const [newInterest, setNewInterest] = useState('');
+  const [imagePreview, setImagePreview] = useState<string>('');
 
   useEffect(() => {
     if (profile) {
       setFormData({
         name: profile.name || '',
         interests: profile.interests?.join(', ') || '',
+        avatarUrl: profile.avatarUrl || '',
+        region: profile.region || '',
+        latitude: profile.latitude?.toString() || '',
+        longitude: profile.longitude?.toString() || '',
       });
+      if (profile.avatarUrl) {
+        setImagePreview(profile.avatarUrl);
+      }
       trackEvent(ANALYTICS_EVENTS.VIEW_PROFILE, { userId: profile.id });
     }
   }, [profile]);
 
   const updateMutation = useMutation({
-    mutationFn: async (updates: { name: string; interests: string[] }) => {
+    mutationFn: async (updates: any) => {
       const res = await apiRequest('PUT', '/api/profile/me', { updates });
       return await res.json();
     },
@@ -57,10 +69,30 @@ export default function Profile() {
     },
   });
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setImagePreview(base64String);
+        setFormData({ ...formData, avatarUrl: base64String });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSave = () => {
     const interests = formData.interests.split(',').map((s: string) => s.trim()).filter(Boolean);
     trackEvent(ANALYTICS_EVENTS.EDIT_PROFILE, { interests: interests.length });
-    updateMutation.mutate({ name: formData.name, interests });
+    updateMutation.mutate({
+      name: formData.name,
+      interests,
+      avatarUrl: formData.avatarUrl,
+      region: formData.region,
+      latitude: formData.latitude ? parseFloat(formData.latitude) : null,
+      longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+    });
   };
 
   const removeInterest = (interest: string) => {
@@ -86,11 +118,32 @@ export default function Profile() {
           {/* Left Column - Avatar & Stats */}
           <Card className="glass border-white/10 p-6 h-fit">
             <div className="flex flex-col items-center text-center">
-              <Avatar className="w-32 h-32 ring-4 ring-primary/30 ring-offset-4 ring-offset-background mb-4">
-                <AvatarFallback className="bg-primary/20 text-primary text-4xl font-bold">
-                  {profile?.name?.charAt(0) || 'U'}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar className="w-32 h-32 ring-4 ring-primary/30 ring-offset-4 ring-offset-background mb-4">
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <AvatarFallback className="bg-primary/20 text-primary text-4xl font-bold">
+                      {profile?.name?.charAt(0) || 'U'}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <label
+                  htmlFor="avatar-upload"
+                  className="absolute bottom-4 right-0 bg-primary hover:bg-primary/80 text-white rounded-full p-2 cursor-pointer"
+                  data-testid="button-upload-avatar"
+                >
+                  <User className="w-4 h-4" />
+                </label>
+                <input
+                  id="avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                  data-testid="input-avatar"
+                />
+              </div>
               
               <h2 className="text-2xl font-bold mb-1">{profile?.name || 'User'}</h2>
               <p className="text-sm text-muted-foreground mb-4">{profile?.email}</p>
@@ -137,6 +190,56 @@ export default function Profile() {
                       value={profile?.email || ''}
                       disabled
                       className="glass border-white/10 pl-10 opacity-60"
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="glass border-white/10 p-6">
+              <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                <Mail className="w-5 h-5 text-primary" />
+                الموقع والمنطقة
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="region">المنطقة / المدينة</Label>
+                  <Input
+                    id="region"
+                    placeholder="مثال: الرياض، جدة، ..."
+                    value={formData.region}
+                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                    className="glass border-white/10 focus:border-primary"
+                    data-testid="input-region"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="latitude">خط العرض</Label>
+                    <Input
+                      id="latitude"
+                      placeholder="24.7136"
+                      type="number"
+                      step="0.0001"
+                      value={formData.latitude}
+                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                      className="glass border-white/10 focus:border-primary"
+                      data-testid="input-latitude"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="longitude">خط الطول</Label>
+                    <Input
+                      id="longitude"
+                      placeholder="46.6753"
+                      type="number"
+                      step="0.0001"
+                      value={formData.longitude}
+                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                      className="glass border-white/10 focus:border-primary"
+                      data-testid="input-longitude"
                     />
                   </div>
                 </div>

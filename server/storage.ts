@@ -10,6 +10,8 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
+  searchUsers(query: string): Promise<User[]>;
+  getNearbyUsers(latitude: number, longitude: number, maxDistance: number): Promise<User[]>;
   
   // Match operations
   createMatch(match: InsertMatch): Promise<Match>;
@@ -78,6 +80,34 @@ export class DatabaseStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users);
+  }
+
+  async searchUsers(query: string): Promise<User[]> {
+    const allUsers = await db.select().from(users);
+    const lowerQuery = query.toLowerCase();
+    return allUsers.filter(user =>
+      (user.name?.toLowerCase().includes(lowerQuery)) ||
+      (user.interests?.some(i => i.toLowerCase().includes(lowerQuery)))
+    );
+  }
+
+  async getNearbyUsers(latitude: number, longitude: number, maxDistance: number): Promise<User[]> {
+    const allUsers = await db.select().from(users);
+    const R = 6371;
+
+    return allUsers.filter(user => {
+      if (!user.latitude || !user.longitude) return false;
+      
+      const dLat = (user.latitude - latitude) * Math.PI / 180;
+      const dLon = (user.longitude - longitude) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(latitude * Math.PI / 180) * Math.cos(user.latitude * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+      
+      return distance <= maxDistance;
+    });
   }
 
   // Match operations

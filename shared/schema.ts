@@ -25,6 +25,9 @@ export const users = pgTable("users", {
   name: text("name"),
   interests: text("interests").array().notNull().default(sql`ARRAY[]::text[]`),
   avatarUrl: text("avatar_url"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  region: text("region"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

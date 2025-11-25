@@ -18,6 +18,7 @@ export default function Navbar() {
 
   const navLinks = [
     { href: "/", label: "الرئيسية" },
+    { href: "/search", label: "البحث" },
     { href: "/profile", label: "ملفي الشخصي" },
     { href: "/chat", label: "الدردشة" },
     { href: "/settings", label: "الإعدادات" },

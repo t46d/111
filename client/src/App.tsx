@@ -8,6 +8,7 @@ import Home from "@/pages/Home";
 import Profile from "@/pages/Profile";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
+import Search from "@/pages/Search";
 import UserDetail from "@/pages/UserDetail";
 import NotFound from "@/pages/not-found";
 
@@ -26,6 +27,7 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/chat" component={Chat} />
           <Route path="/settings" component={Settings} />
+          <Route path="/search" component={Search} />
           <Route path="/user" component={UserDetail} />
           <Route component={NotFound} />
         </>
