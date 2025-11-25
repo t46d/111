@@ -1,11 +1,13 @@
-import { type User, type InsertUser, type Match, type InsertMatch, type Chat, type InsertChat, type Payment, type InsertPayment, type Review, type InsertReview, type Analytics, type InsertAnalytics } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { type User, type UpsertUser, type InsertUser, type Match, type InsertMatch, type Chat, type InsertChat, type Payment, type InsertPayment, type Review, type InsertReview, type Analytics, type InsertAnalytics } from "@shared/schema";
+import { db } from "./db";
+import { users, matches, chats, payments, reviews, analytics } from "@shared/schema";
+import { eq, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
   
@@ -32,175 +34,125 @@ export interface IStorage {
   getAnalyticsEvents(eventType?: string, limit?: number): Promise<Analytics[]>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private matches: Map<string, Match>;
-  private chats: Map<string, Chat>;
-  private payments: Map<string, Payment>;
-  private reviews: Map<string, Review>;
-  private analytics: Map<string, Analytics>;
-
-  constructor() {
-    this.users = new Map();
-    this.matches = new Map();
-    this.chats = new Map();
-    this.payments = new Map();
-    this.reviews = new Map();
-    this.analytics = new Map();
-    
-    // Seed some demo users for matchmaking
-    this.seedDemoData();
-  }
-
-  private seedDemoData() {
-    const demoUsers: InsertUser[] = [
-      { name: 'Ava', email: 'ava@demo.com', password: 'demo123', interests: ['Design', 'Tech', 'Music'] },
-      { name: 'Leo', email: 'leo@demo.com', password: 'demo123', interests: ['Music', 'Travel', 'Art'] },
-      { name: 'Maya', email: 'maya@demo.com', password: 'demo123', interests: ['Art', 'Wellness', 'Books'] },
-      { name: 'Omar', email: 'omar@demo.com', password: 'demo123', interests: ['Tech', 'Gaming', 'Sports'] },
-      { name: 'Sara', email: 'sara@demo.com', password: 'demo123', interests: ['Wellness', 'Cooking', 'Travel'] },
-    ];
-
-    demoUsers.forEach(user => {
-      const id = randomUUID();
-      this.users.set(id, { ...user, id, avatarUrl: null });
-    });
-  }
-
+export class DatabaseStorage implements IStorage {
   // User operations
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.email === email);
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id, avatarUrl: null };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
-  async updateUser(id: string, updates: Partial<Omit<User, 'id' | 'email'>>): Promise<User | undefined> {
-    const user = this.users.get(id);
-    if (!user) return undefined;
-    
-    const updatedUser: User = {
-      ...user,
-      name: updates.name !== undefined ? updates.name : user.name,
-      interests: updates.interests !== undefined ? updates.interests : user.interests,
-      avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : user.avatarUrl,
-    };
-    this.users.set(id, updatedUser);
-    return updatedUser;
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: userData.email,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          profileImageUrl: userData.profileImageUrl,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
   }
 
   async getAllUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
+    return await db.select().from(users);
   }
 
   // Match operations
   async createMatch(insertMatch: InsertMatch): Promise<Match> {
-    const id = randomUUID();
-    const match: Match = { ...insertMatch, id, createdAt: new Date() };
-    this.matches.set(id, match);
+    const [match] = await db.insert(matches).values(insertMatch).returning();
     return match;
   }
 
   async getMatchesForUser(userId: string): Promise<Match[]> {
-    return Array.from(this.matches.values()).filter(
-      match => match.userId === userId
-    );
+    return await db.select().from(matches).where(eq(matches.userId, userId));
   }
 
   // Chat operations
   async createChat(insertChat: InsertChat): Promise<Chat> {
-    const id = randomUUID();
-    const chat: Chat = { ...insertChat, id, createdAt: new Date() };
-    this.chats.set(id, chat);
+    const [chat] = await db.insert(chats).values(insertChat).returning();
     return chat;
   }
 
   async getChatHistory(userId1: string, userId2: string): Promise<Chat[]> {
-    return Array.from(this.chats.values())
-      .filter(chat =>
-        (chat.fromUserId === userId1 && chat.toUserId === userId2) ||
-        (chat.fromUserId === userId2 && chat.toUserId === userId1)
+    return await db
+      .select()
+      .from(chats)
+      .where(
+        or(
+          and(eq(chats.fromUserId, userId1), eq(chats.toUserId, userId2)),
+          and(eq(chats.fromUserId, userId2), eq(chats.toUserId, userId1))
+        )
       )
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      .orderBy(chats.createdAt);
   }
 
   async getRecentChats(limit: number = 20): Promise<Chat[]> {
-    return Array.from(this.chats.values())
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+    return await db.select().from(chats).orderBy(chats.createdAt).limit(limit);
   }
 
   // Payment operations
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
-    const id = randomUUID();
-    const payment: Payment = { ...insertPayment, id, createdAt: new Date() };
-    this.payments.set(id, payment);
+    const [payment] = await db.insert(payments).values(insertPayment).returning();
     return payment;
   }
 
   async getPaymentsForUser(userId: string): Promise<Payment[]> {
-    return Array.from(this.payments.values()).filter(
-      payment => payment.userId === userId
-    );
+    return await db.select().from(payments).where(eq(payments.userId, userId));
   }
 
   // Review operations
   async createReview(insertReview: InsertReview): Promise<Review> {
-    const id = randomUUID();
-    const review: Review = {
-      ...insertReview,
-      id,
-      createdAt: new Date(),
-      comment: insertReview.comment || null,
-    };
-    this.reviews.set(id, review);
+    const [review] = await db.insert(reviews).values(insertReview).returning();
     return review;
   }
 
   async getReviewsForUser(userId: string): Promise<Review[]> {
-    return Array.from(this.reviews.values()).filter(
-      review => review.toUserId === userId
-    );
+    return await db.select().from(reviews).where(eq(reviews.toUserId, userId));
   }
 
   async getAverageRating(userId: string): Promise<number> {
-    const reviews = await this.getReviewsForUser(userId);
-    if (reviews.length === 0) return 0;
-    const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
-    return sum / reviews.length;
+    const reviewList = await this.getReviewsForUser(userId);
+    if (reviewList.length === 0) return 0;
+    const sum = reviewList.reduce((acc, r) => acc + r.rating, 0);
+    return sum / reviewList.length;
   }
 
   // Analytics operations
   async trackEvent(insertAnalytics: InsertAnalytics): Promise<Analytics> {
-    const id = randomUUID();
-    const analytic: Analytics = {
-      ...insertAnalytics,
-      id,
-      createdAt: new Date(),
-      userId: insertAnalytics.userId || null,
-      eventData: insertAnalytics.eventData || null,
-    };
-    this.analytics.set(id, analytic);
+    const [analytic] = await db.insert(analytics).values(insertAnalytics).returning();
     return analytic;
   }
 
   async getAnalyticsEvents(eventType?: string, limit: number = 100): Promise<Analytics[]> {
-    let events = Array.from(this.analytics.values());
+    let query = db.select().from(analytics);
     if (eventType) {
-      events = events.filter(e => e.eventType === eventType);
+      query = query.where(eq(analytics.eventType, eventType)) as any;
     }
-    return events
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, limit);
+    return await query.orderBy(analytics.createdAt).limit(limit);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

@@ -1,15 +1,32 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, real } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, real, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// User storage table with Replit Auth fields
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  password: text("password").notNull(),
+  email: text("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  // Legacy fields for existing user data
+  name: text("name"),
   interests: text("interests").array().notNull().default(sql`ARRAY[]::text[]`),
   avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const matches = pgTable("matches", {
@@ -53,9 +70,11 @@ export const analytics = pgTable("analytics", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
-  avatarUrl: true,
+  createdAt: true,
+  updatedAt: true,
 }).extend({
   interests: z.array(z.string()).default([]),
 });
@@ -91,8 +110,10 @@ export const insertAnalyticsSchema = createInsertSchema(analytics).omit({
   eventData: z.string().optional(),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
+// Type exports
+export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Match = typeof matches.$inferSelect;
 export type Chat = typeof chats.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
