@@ -1,5 +1,9 @@
 # VeXa - AI-Powered Social Dating Platform
 
+## Project Domain
+
+**Domain:** vexachat.world
+
 ## Overview
 
 VeXa is a modern social dating and chat platform that uses AI-driven matching algorithms to connect users based on shared interests. The application features a cyberpunk-inspired neon aesthetic with glassmorphism design elements, real-time chat functionality, and premium subscription options.
